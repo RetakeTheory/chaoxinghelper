@@ -1,0 +1,10 @@
+# Use your own relay endpoint and fresh token. No production values are included.
+CHAOXING_RELAY_ORIGIN=
+CHAOXING_RELAY_TOKEN=
+CARD_FONT_ORIGIN=
+
+# Optional, only for legacy S3-backed reminder attachments.
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=
+AWS_S3_BUCKET=

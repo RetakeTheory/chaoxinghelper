@@ -1,0 +1,10 @@
+# Copy to ops/cloudflared-chaoxing.yml and fill values for your own tunnel.
+tunnel: YOUR_TUNNEL_ID
+credentials-file: C:/path/to/YOUR_TUNNEL_ID.json
+ingress:
+  - hostname: relay.example.com
+    service: http://127.0.0.1:8788
+    originRequest:
+      connectTimeout: 10s
+      keepAliveTimeout: 90s
+  - service: http_status:404
