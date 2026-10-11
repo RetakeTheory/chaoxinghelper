@@ -42,6 +42,63 @@ function fixture() {
   const engine = new OneBotChaoxing(saved, async () => { throw new Error("structured controls must not send QQ messages"); }, () => client);
   return { saved, engine, client };
 }
+test("multi-course queue is account-scoped, idempotent, persistent and never interrupts a running video", async () => {
+  const f = fixture(); await f.engine.acceptAuthenticatedSession("123", session, "123");
+  await f.engine.controlByUid("123", { action: "mount", courseId: "11", classId: "22" });
+  f.saved.values.get("cx:account:123").video.current = { name: "active", playingTime: 120, duration: 600, lastTickAt: Date.now() };
+  const original = structuredClone(f.saved.values.get("cx:account:123").video);
+  const enqueue = { action: "enqueue", courseId: "44", classId: "55" };
+  assert.ok((await f.engine.controlByUid("123", enqueue)).ok);
+  assert.ok((await f.engine.controlByUid("123", enqueue)).ok);
+  assert.deepEqual(f.saved.values.get("cx:account:123").video, original);
+  assert.equal((await f.engine.queryByUid("123")).courseQueue.length, 1);
+  assert.equal((await f.engine.controlByUid("999", enqueue)).ok, false);
+  assert.equal((await f.engine.controlByUid("123", { ...enqueue, courseId: "999" })).ok, false);
+  await f.engine.controlByUid("123", { action: "pause" });
+  await f.engine.acceptAuthenticatedSession("123", session, "123");
+  assert.equal(f.saved.values.get("cx:account:123").enabled, false);
+  assert.equal((await f.engine.queryByUid("123")).courseQueue.length, 1);
+  const restored = new OneBotChaoxing(f.saved, async () => {}, () => f.client);
+  await restored.controlByUid("123", { action: "resume" });
+  const state = await f.saved.get("cx:account:123");
+  await restored.completeVideoMount("123", state, "当前课程扫描确认已完成");
+  assert.equal(state.video.course.courseId, "44");
+  assert.equal(state.video.current, undefined);
+  assert.equal(state.video.completed, 0);
+  assert.equal(state.courseQueue.length, 0);
+  assert.notEqual(state.video.queueId, original.queueId);
+});
+test("enqueue while paused does not resume; failed course cannot advance the pending queue", async () => {
+  const f = fixture(); await f.engine.acceptAuthenticatedSession("123", session, "123");
+  await f.engine.controlByUid("123", { action: "pause" });
+  await f.engine.controlByUid("123", { action: "enqueue", courseId: "11", classId: "22" });
+  let state = await f.saved.get("cx:account:123");
+  assert.equal(state.video, undefined); assert.equal(state.enabled, false);
+  assert.equal(f.engine.startNextCourse(state), false);
+  await f.engine.controlByUid("123", { action: "resume" });
+  state = await f.saved.get("cx:account:123");
+  assert.equal(f.engine.startNextCourse(state), true);
+  assert.equal(state.video.course.courseId, "11");
+  state.enabled = false; state.courseQueue = [another];
+  assert.equal(f.engine.startNextCourse(state), false);
+  assert.equal(state.courseQueue.length, 1);
+});
+test("remove/cancel queue, ten-course cap and unavailable next course preserve other accounts", async () => {
+  const f = fixture(); await f.engine.acceptAuthenticatedSession("123", session, "123");
+  await f.engine.controlByUid("123", { action: "mount", courseId: "11", classId: "22" });
+  await f.engine.controlByUid("123", { action: "enqueue", courseId: "44", classId: "55" });
+  const active = structuredClone(f.saved.values.get("cx:account:123").video);
+  await f.engine.controlByUid("123", { action: "dequeue", courseId: "44", classId: "55" });
+  assert.deepEqual(f.saved.values.get("cx:account:123").video, active);
+  const state = f.saved.values.get("cx:account:123");
+  state.courseQueue = Array.from({ length: 10 }, (_, i) => ({ courseId: String(100 + i), classId: "1", cpi: "1" }));
+  assert.equal((await f.engine.controlByUid("123", { action: "enqueue", courseId: "44", classId: "55" })).ok, false);
+  state.video = undefined;
+  assert.equal(f.engine.startNextCourse(state), false);
+  assert.equal(state.enabled, false); assert.equal(state.courseQueue.length, 10);
+  await f.engine.controlByUid("123", { action: "cancel" });
+  assert.deepEqual(f.saved.values.get("cx:account:123").courseQueue, []);
+});
 test("web controls whitelist actions and stable course IDs, never arbitrary commands or caller UID", () => {
   for (const value of [null, [], { action: "register", password: "x" }, { action: "mount", courseId: "x", classId: "22" }, { action: "mount", courseId: "11", classId: "22", replace: "false" }]) {
     assert.equal(parseChaoxingWebControl(value), null);

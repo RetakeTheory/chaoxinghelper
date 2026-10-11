@@ -22,6 +22,10 @@ export async function ensureChaoxingQuerySchema() {
       attempts INTEGER NOT NULL,
       window_started_at INTEGER NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS chaoxing_query_login_challenges (
+      id TEXT PRIMARY KEY NOT NULL, binding_hash TEXT NOT NULL, private_key TEXT NOT NULL, expires_at INTEGER NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_cx_login_challenge_expires ON chaoxing_query_login_challenges (expires_at)"),
   ]);
   schemaReady = true;
 }
@@ -82,4 +86,14 @@ export async function deleteChaoxingQuerySession(request: Request) {
   await ensureChaoxingQuerySchema();
   await (await getD1()).prepare("DELETE FROM chaoxing_query_sessions WHERE token_hash = ?")
     .bind(await hashValue(token)).run();
+}
+
+export async function cleanupChaoxingQueryAuth(now = Date.now()) {
+  await ensureChaoxingQuerySchema();
+  const db = await getD1();
+  await db.batch([
+    db.prepare("DELETE FROM chaoxing_query_login_challenges WHERE expires_at <= ?").bind(now),
+    db.prepare("DELETE FROM chaoxing_query_sessions WHERE expires_at <= ?").bind(now),
+    db.prepare("DELETE FROM chaoxing_query_login_attempts WHERE window_started_at < ?").bind(now - 24 * 60 * 60_000),
+  ]);
 }

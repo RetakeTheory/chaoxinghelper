@@ -1,4 +1,10 @@
 .cx-query-body{background:#f5f6fb;color:#202640;font-family:Inter,"Microsoft YaHei",system-ui,sans-serif}
+.cx-query-login button.cx-query-login-verify{background:#eaf3ff;color:#4876ae;border:1px solid #cbdff5}
+.cx-query-login button.cx-query-login-verify.verified{background:#eaf7ed;color:#37963c;border-color:#bfe2c5;opacity:1}
+.cx-query-course-queue{padding-left:24px;margin:18px 0;color:#657087;font-size:13px}
+.cx-query-course-queue li{padding:8px 0;overflow-wrap:anywhere}
+.cx-query-course-queue li span{margin-right:12px}
+.cx-query-course-queue button{padding:6px 10px;border:1px solid #e1e7f0;border-radius:8px;background:#f4f7ff;color:#557caf;cursor:pointer}
 .cx-query-body::before,.cx-query-body::after{display:none}
 .cx-query-page{min-height:100dvh;padding:48px 24px 88px;background:radial-gradient(circle at 8% 3%,#e9e6ff 0,transparent 31%),radial-gradient(circle at 92% 15%,#e4f3ff 0,transparent 28%),#f5f6fb;color:#202640;font-family:Inter,"Microsoft YaHei",system-ui,sans-serif}
 .cx-query-page *{box-sizing:border-box}

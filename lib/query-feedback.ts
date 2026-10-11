@@ -30,7 +30,7 @@ export function redactQueryLog(value: string, secrets: string[] = []) {
   }
   return safe.replace(/\bBearer\s+[^\s,;"']+/gi, "Bearer [已隐藏]")
     .replace(/\b((?:cookie|set-cookie|authorization)\s*[:=])[^\r\n]*/gi, "$1 [已隐藏]")
-    .replace(/((?:["']?(?:password|passwd|pwd|token|secret|session(?:_?id|Confirmation)?|confirmation|vc3|_d|enc|openc)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}\r\n]+)/gi, "$1[已隐藏]")
+    .replace(/((?:["']?(?:password|passwd|pwd|token|secret|private_key|ciphertext|session(?:_?id|Confirmation)?|confirmation|vc3|_d|enc|openc)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}\r\n]+)/gi, "$1[已隐藏]")
     .slice(0, 16_000);
 }
 
@@ -46,9 +46,11 @@ export function queryFailure(error: unknown, context: QueryFailureContext, now =
   return { message, log: redactQueryLog(lines.join("\n"), context.secrets) };
 }
 
-export function queryControlFeedback(action: "mount" | "cancel" | "pause" | "resume" | "refresh"): { kind: QueryToastKind; message: string } {
+export function queryControlFeedback(action: "mount" | "enqueue" | "dequeue" | "cancel" | "pause" | "resume" | "refresh"): { kind: QueryToastKind; message: string } {
   return {
     mount: { kind: "done" as const, message: "已开始挂载" },
+    enqueue: { kind: "done" as const, message: "已加入课程队列" },
+    dequeue: { kind: "cancellation" as const, message: "已移除排队课程" },
     cancel: { kind: "cancellation" as const, message: "已取消视频挂载" },
     pause: { kind: "warning" as const, message: "已暂停挂载与监听" },
     resume: { kind: "done" as const, message: "已恢复挂载与监听" },

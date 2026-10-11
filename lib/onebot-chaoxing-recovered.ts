@@ -258,6 +258,7 @@ var qg = [
           classId: String(course.classId),
           name: course.name || `课程 ${course.courseId}`,
         })),
+        courseQueue: (t.courseQueue || []).map((course) => ({ courseId: course.courseId, classId: course.classId, name: course.name || `课程 ${course.courseId}` })),
         locationConfigured: !!t.location,
         lastStatus: t.lastStatus,
         updatedAt: Math.max(
@@ -326,7 +327,23 @@ var qg = [
         const account = await this.storage.get(key);
         if (!account || account.session.cookies._uid !== uid) return { ok: false, message: `当前账号记录已变化，请重新登录` };
         let message = ``;
-        if (control.action === `mount`) {
+        if (control.action === `enqueue`) {
+          const same = course => course.courseId === control.courseId && course.classId === control.classId;
+          if ((account.video && same(account.video.course)) || (account.courseQueue || []).some(same))
+            return { ok: true, message: `该课程已在当前挂载或队列中，原进度已保留` };
+          if ((account.courseQueue || []).length >= 10) return { ok: false, message: `每个账号最多排队 10 门课程` };
+          const course = account.session.courses.find(same);
+          if (!course) return { ok: false, message: `该课程不在当前账号的课程列表中` };
+          if (!course.cpi) return { ok: false, message: `该课程缺少挂载标识，请刷新课程后重试` };
+          account.courseQueue = [...(account.courseQueue || []), { ...course }];
+          if (!account.video && account.enabled) this.startNextCourse(account);
+          if (account.enabled) account.nextAt = Date.now();
+          message = account.enabled && account.video?.course.courseId === course.courseId && account.video?.course.classId === course.classId
+            ? `课程已挂载，将开始扫描未完成的视频任务点` : `已加入课程队列，将按顺序挂载`;
+        } else if (control.action === `dequeue`) {
+          account.courseQueue = (account.courseQueue || []).filter(course => course.courseId !== control.courseId || course.classId !== control.classId);
+          message = `已移除排队课程，当前挂载不受影响`;
+        } else if (control.action === `mount`) {
           const current = account.video?.course;
           const same = current?.courseId === control.courseId && current?.classId === control.classId;
           if (current && !same && !control.replace)
@@ -345,9 +362,8 @@ var qg = [
               if (!course?.cpi) return { ok: false, message: `该课程缺少挂载标识，请刷新课程后重试` };
             }
             if (account.video) await this.clearVideoQueue(owner, account.video);
-            account.video = { course, chapterIndex: 0, cardIndex: 0, completed: 0, finalAttempts: 0,
-              status: `等待读取章节并扫描全部视频节点`, protocolVersion: Rg, scanComplete: false,
-              queueId: crypto.randomUUID().replace(/-/g, ``), queuedVideos: 0, queueIndex: 0, completedJobIds: [] };
+            account.video = this.newCourseMount(course);
+            account.courseQueue = (account.courseQueue || []).filter(queued => queued.courseId !== course.courseId || queued.classId !== course.classId);
           }
           if (same && !account.enabled && account.video.current) account.video.current.lastTickAt = Date.now();
           account.enabled = true; account.nextAt = Date.now(); account.failures = 0;
@@ -355,7 +371,8 @@ var qg = [
         } else if (control.action === `cancel`) {
           if (account.video) await this.clearVideoQueue(owner, account.video);
           account.video = undefined;
-          message = `已取消视频挂载，签到监听保持原状态`;
+          account.courseQueue = [];
+          message = `已取消当前及排队视频挂载，签到监听保持原状态`;
         } else if (control.action === `pause`) {
           account.enabled = false;
           message = `已暂停签到监听和视频挂载，原进度已保留`;
@@ -486,6 +503,30 @@ var qg = [
         (t.video = void 0),
         t.outbox.push(n),
         (t.lastStatus = n));
+      if (t.enabled && this.startNextCourse(t)) {
+        t.outbox.push(t.lastStatus);
+        t.nextAt = Date.now();
+      }
+    }
+    newCourseMount(course) {
+      return { course, chapterIndex: 0, cardIndex: 0, completed: 0, finalAttempts: 0,
+        status: `等待读取章节并扫描全部视频节点`, protocolVersion: Rg, scanComplete: false,
+        queueId: crypto.randomUUID().replace(/-/g, ``), queuedVideos: 0, queueIndex: 0, completedJobIds: [] };
+    }
+    startNextCourse(account) {
+      if (account.video || !account.courseQueue?.length || !account.enabled) return false;
+      const queued = account.courseQueue[0];
+      const course = account.session.courses.find(course => course.courseId === queued.courseId && course.classId === queued.classId);
+      if (!course?.cpi) {
+        account.enabled = false;
+        account.lastStatus = `排队课程暂不可用，已保留队列；请刷新课程后继续`;
+        account.outbox.push(account.lastStatus);
+        return false;
+      }
+      account.courseQueue = account.courseQueue.slice(1);
+      account.video = this.newCourseMount(course);
+      account.lastStatus = `开始下一门排队课程：${course.name || `课程 ${course.courseId}`}`;
+      return true;
     }
     async startNextQueuedVideo(e, t, n, r) {
       let i = t.video;
@@ -524,6 +565,7 @@ var qg = [
       return !1;
     }
     async advanceVideo(e, t, n, r) {
+      if (!t.video) this.startNextCourse(t);
       let i = t.video;
       if (i) {
         if (i.current && r >= (i.nextVideoAt || i.current.lastTickAt + 6e4)) {

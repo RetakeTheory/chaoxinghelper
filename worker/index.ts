@@ -1,6 +1,8 @@
 import handler from "vinext/server/app-router-entry";
 import { oneBotTokenHash } from "../lib/onebot-cloudflare";
 import { ensureDatabaseSchema } from "../db/runtime";
+import { cleanupChaoxingQueryAuth } from "../lib/chaoxing-query-auth";
+import { secureQueryResponse } from "../lib/query-response-security";
 import { OneBotSession } from "./onebot-session";
 import { ChaoxingWebSession } from "./chaoxing-web-session";
 
@@ -24,7 +26,7 @@ export default {
       headers.set("x-reshi-onebot-id", bot.bot_id);
       return env.ONEBOT.getByName(bot.bot_id).fetch(new Request(request, { headers }));
     }
-    return handler.fetch(request, env, ctx);
+    return secureQueryResponse(url, await handler.fetch(request, env, ctx));
   },
   async scheduled(controller: { scheduledTime: number }, env: Cloudflare.Env) {
     await ensureDatabaseSchema();
@@ -32,6 +34,7 @@ export default {
       WHERE due_at <= ? AND (claimed_at IS NULL OR claimed_at < ?)
       UNION SELECT bot_id FROM onebot_bots WHERE enabled = 1 LIMIT 50`)
       .bind(controller.scheduledTime, controller.scheduledTime - 60_000).all<{ bot_id: string }>();
-    await Promise.allSettled((rows.results || []).map(row => env.ONEBOT.getByName(row.bot_id).processDue(row.bot_id, controller.scheduledTime)));
+    await Promise.allSettled([cleanupChaoxingQueryAuth(controller.scheduledTime),
+      ...(rows.results || []).map(row => env.ONEBOT.getByName(row.bot_id).processDue(row.bot_id, controller.scheduledTime))]);
   },
 };

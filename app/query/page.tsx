@@ -5,6 +5,7 @@ import type { ChaoxingWebControl } from "../../lib/chaoxing-web-types";
 import { QueryApiError, queryControlFeedback, readQueryJson } from "../../lib/query-feedback";
 import { QueryFeedbackProvider, useQueryFeedback } from "./QueryFeedback";
 import { verifyQueryLoginSession } from "../../lib/query-login-session";
+import { sealQueryLogin, type LoginChallenge } from "../../lib/query-login-crypto";
 import "./query.css";
 
 const CourseLocationSettings = lazy(() => import("./CourseLocationSettings"));
@@ -12,6 +13,7 @@ const CourseLocationSettings = lazy(() => import("./CourseLocationSettings"));
 type Snapshot = {
   enabled: boolean; courseCount: number; lastStatus: string;
   courses: { courseId: string; classId: string; name: string }[];
+  courseQueue?: { courseId: string; classId: string; name: string }[];
   locationConfigured?: boolean;
   source?: "web" | "qq";
   notices?: { id: string; text: string; createdAt: number }[];
@@ -35,8 +37,9 @@ function QueryScreen() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
+  const [challenge, setChallenge] = useState<LoginChallenge | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pendingAction, setPendingAction] = useState<ChaoxingWebControl["action"] | "status" | "login" | "logout" | "repair" | null>(null);
+  const [pendingAction, setPendingAction] = useState<ChaoxingWebControl["action"] | "status" | "login" | "verify" | "logout" | "repair" | null>(null);
   const [refreshedAt, setRefreshedAt] = useState(0);
   const [selectedCourseKey, setSelectedCourseKey] = useState("");
   const mutationRef = useRef(false);
@@ -50,7 +53,7 @@ function QueryScreen() {
     loginCheckFailedRef.current = true;
     authenticatedRef.current = false;
     lastRefreshError.current = "";
-    setSnapshot(null); setView("login"); setSelectedCourseKey("");
+    setSnapshot(null); setView("login"); setSelectedCourseKey(""); setChallenge(null);
     setBusy(false); setPendingAction(null); manualRefreshRef.current = false;
     notify("本站登录状态已失效，请重新登录；后台任务不会因此停止", "warning");
   }, [notify]);
@@ -92,15 +95,39 @@ function QueryScreen() {
     const polling = window.setInterval(() => void refresh(true), 30_000);
     return () => { document.body.classList.remove("cx-query-body"); window.clearTimeout(initial); window.clearInterval(polling); };
   }, [refresh]);
+  useEffect(() => {
+    if (!challenge) return;
+    const expiry = window.setTimeout(() => setChallenge(null), Math.max(0, challenge.expiresAt - Date.now()));
+    return () => window.clearTimeout(expiry);
+  }, [challenge]);
+  async function verifyLogin() {
+    if (mutationRef.current) return;
+    mutationRef.current = true; setBusy(true); setPendingAction("verify");
+    try {
+      if (!window.isSecureContext || !crypto.subtle) throw new Error("请使用支持安全加密的系统浏览器，通过 HTTPS 打开本站");
+      const response = await fetch("/api/query/challenge", { method: "POST", credentials: "include", cache: "no-store",
+        headers: { "content-type": "application/json" }, body: "{}" });
+      const result = await readQueryJson<{ challenge?: LoginChallenge; error?: string }>(response);
+      if (!response.ok || !result.challenge) throw new QueryApiError(result.error || "验证未通过", response);
+      setChallenge(result.challenge);
+      notify("验证就绪，可以登录了", "done");
+    } catch (error) {
+      setChallenge(null); reportError(error, { operation: "登录验证", endpoint: "/api/query/challenge", method: "POST" });
+    } finally { mutationRef.current = false; setBusy(false); setPendingAction(null); }
+  }
   async function login(event: React.FormEvent) {
     event.preventDefault();
     if (mutationRef.current) return;
     if (!account.trim() || !password) { notify("请填写学习通账号和密码", "warning"); return; }
+    if (!challenge || challenge.expiresAt <= Date.now()) { setChallenge(null); notify("请先点击验证", "warning"); return; }
     setBusy(true); setPendingAction("login");
     mutationRef.current = true; const requestId = ++requestRef.current;
+    loginCheckFailedRef.current = true;
     let verifying = false;
     try {
-      const response = await fetch("/api/query/login", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ account, password }) });
+      const sealed = await sealQueryLogin(challenge, account, password, window.location.origin);
+      setChallenge(null);
+      const response = await fetch("/api/query/login", { method: "POST", credentials: "include", cache: "no-store", headers: { "content-type": "application/json" }, body: JSON.stringify(sealed) });
       const result = await readQueryJson<{ snapshot?: Snapshot; error?: string; sessionConfirmation?: string }>(response);
       if (!response.ok || !result.snapshot) throw new QueryApiError(result.error || "登录失败", response);
       verifying = true;
@@ -116,7 +143,7 @@ function QueryScreen() {
       if (verifying) { authenticatedRef.current = false; setSnapshot(null); setView("login"); }
       reportError(error, { operation: verifying ? "校验本站登录会话" : "登录", endpoint: verifying ? "/api/query/session" : "/api/query/login", method: "POST", secrets: [account, password] });
     }
-    finally { setPassword(""); setBusy(false); setPendingAction(null); mutationRef.current = false; }
+    finally { setChallenge(null); setPassword(""); setBusy(false); setPendingAction(null); mutationRef.current = false; }
   }
   async function logout() {
     if (mutationRef.current) return;
@@ -125,7 +152,7 @@ function QueryScreen() {
       const response = await fetch("/api/query/logout", { method: "POST", credentials: "include" });
       if (!response.ok) throw new QueryApiError("退出失败，请重试", response);
       authenticatedRef.current = false;
-      setSnapshot(null); setView("login"); setSelectedCourseKey("");
+      setSnapshot(null); setView("login"); setSelectedCourseKey(""); setChallenge(null);
       notify("已退出登录", "info");
     } catch (error) { reportError(error, { operation: "退出登录", endpoint: "/api/query/logout", method: "POST" }); }
     finally { setBusy(false); setPendingAction(null); mutationRef.current = false; }
@@ -144,7 +171,7 @@ function QueryScreen() {
       if (!response.ok) throw new QueryApiError(result.error || "操作失败，请刷新状态后重试", response);
       const feedback = queryControlFeedback(payload.action);
       notify(feedback.message, feedback.kind);
-    } catch (error) { if (requestId === requestRef.current) reportError(error, { operation: ({ mount: "开始挂载", cancel: "取消挂载", pause: "暂停挂载", resume: "恢复挂载", refresh: "刷新课程" })[payload.action], endpoint: "/api/query/control", method: "POST" }); }
+    } catch (error) { if (requestId === requestRef.current) reportError(error, { operation: ({ mount: "开始挂载", enqueue: "加入课程队列", dequeue: "移除排队课程", cancel: "取消挂载", pause: "暂停挂载", resume: "恢复挂载", refresh: "刷新课程" })[payload.action], endpoint: "/api/query/control", method: "POST" }); }
     finally { setBusy(false); setPendingAction(null); mutationRef.current = false; }
   }
   async function repair() {
@@ -173,7 +200,8 @@ function QueryScreen() {
     <form onSubmit={login} aria-busy={busy} noValidate>
       <label><span>学习通账号</span><input value={account} onChange={(event) => setAccount(event.target.value)} autoComplete="username" maxLength={100} required /></label>
       <label><span>密码</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" maxLength={128} required /></label>
-      <button type="submit" disabled={busy}>{pendingAction === "login" && <span className="cx-query-spinner" aria-hidden="true" />}{busy ? "登录中…" : "登录，开始今日任务"}</button>
+      <button type="button" className={`cx-query-login-verify ${challenge ? "verified" : ""}`} disabled={busy || Boolean(challenge)} onClick={() => void verifyLogin()}>{pendingAction === "verify" && <span className="cx-query-spinner" aria-hidden="true" />}{challenge ? "✓ 已验证" : pendingAction === "verify" ? "验证中…" : "点击验证"}</button>
+      <button type="submit" disabled={busy || !challenge}>{pendingAction === "login" && <span className="cx-query-spinner" aria-hidden="true" />}{pendingAction === "login" ? "登录中…" : "登录，开始今日任务"}</button>
     </form>
   </section></main>;
   if (!snapshot) return null;
@@ -182,6 +210,8 @@ function QueryScreen() {
     || snapshot.courses.find((course) => course.courseId === mount?.courseId && course.classId === mount?.classId) || snapshot.courses[0];
   const activeCourseKey = selectedCourse ? `${selectedCourse.courseId}:${selectedCourse.classId}` : "";
   const sameCourse = Boolean(mount && selectedCourse && mount.courseId === selectedCourse.courseId && mount.classId === selectedCourse.classId);
+  const queued = snapshot.courseQueue || [];
+  const alreadyQueued = queued.some(course => course.courseId === selectedCourse?.courseId && course.classId === selectedCourse?.classId);
   const isMountingVideo = snapshot.enabled && Boolean(mount?.current);
   const currentProgress = mount?.current?.duration ? Math.min(100, mount.current.playingTime / mount.current.duration * 100) : 0;
   const totalProgress = mount?.total ? Math.min(100, mount.completed / mount.total * 100) : 0;
@@ -207,12 +237,14 @@ function QueryScreen() {
           if (replace && !await confirm({ title: "切换课程", message: `将停止“${mount!.courseName}”的挂载并切换到“${selectedCourse.name}”，是否继续？`, confirmLabel: "切换并挂载" })) return;
           void control({ action: "mount", courseId: selectedCourse.courseId, classId: selectedCourse.classId, replace });
         }}>{pendingAction === "mount" && <span className="cx-query-spinner" aria-hidden="true" />}{sameCourse ? snapshot.enabled ? "已挂载当前课程" : "继续当前课程" : "挂载所选课程"}</button>
+        <button type="button" className="quiet" disabled={busy || !selectedCourse || sameCourse || alreadyQueued || queued.length >= 10} onClick={() => selectedCourse && void control({ action: "enqueue", courseId: selectedCourse.courseId, classId: selectedCourse.classId })}>{pendingAction === "enqueue" && <span className="cx-query-spinner" aria-hidden="true" />}{alreadyQueued ? "已在课程队列" : "加入课程队列"}</button>
         <button type="button" className="quiet" disabled={busy} onClick={() => void control({ action: "refresh" })}>{pendingAction === "refresh" && <span className="cx-query-spinner" aria-hidden="true" />}刷新课程列表</button>
         <button type="button" className="quiet" disabled={busy} onClick={() => void control({ action: snapshot.enabled ? "pause" : "resume" })}>{(pendingAction === "pause" || pendingAction === "resume") && <span className="cx-query-spinner" aria-hidden="true" />}{snapshot.enabled ? "暂停监听与挂载" : "继续监听与挂载"}</button>
-        {mount && <button type="button" className="quiet" disabled={busy} onClick={async () => {
-          if (await confirm({ title: "取消视频挂载", message: "要取消当前视频挂载吗？", confirmLabel: "确认取消挂载", destructive: true })) void control({ action: "cancel" });
+        {(mount || queued.length > 0) && <button type="button" className="quiet" disabled={busy} onClick={async () => {
+          if (await confirm({ title: "取消视频挂载", message: "要取消当前及所有排队课程的视频挂载吗？", confirmLabel: "确认取消挂载", destructive: true })) void control({ action: "cancel" });
         }}>{pendingAction === "cancel" && <span className="cx-query-spinner" aria-hidden="true" />}取消视频挂载</button>}
       </div>
+      {queued.length > 0 && <ol className="cx-query-course-queue" aria-label="排队课程">{queued.map(course => <li key={`${course.courseId}:${course.classId}`}><span>{course.name}</span><button type="button" disabled={busy} onClick={() => void control({ action: "dequeue", courseId: course.courseId, classId: course.classId })} aria-label={`移除排队课程 ${course.name}`}>移除</button></li>)}</ol>}
       <p className="cx-query-status">{snapshot.lastStatus || "后台已就绪"}</p>
     </section>
     <section className="cx-query-card"><div className="cx-query-section-title"><span>课程</span><strong>{mount?.courseName || "当前没有挂载课程"}</strong><em className={`cx-query-pill ${isMountingVideo ? "online" : "paused"}`}>{isMountingVideo ? "正在挂载" : "待挂载"}</em></div>
