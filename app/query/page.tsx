@@ -6,6 +6,7 @@ import { QueryApiError, queryControlFeedback, readQueryJson } from "../../lib/qu
 import { QueryFeedbackProvider, useQueryFeedback } from "./QueryFeedback";
 import { verifyQueryLoginSession } from "../../lib/query-login-session";
 import { sealQueryLogin, type LoginChallenge } from "../../lib/query-login-crypto";
+import { QueryIcon } from "./QueryIcon";
 import "./query.css";
 
 const CourseLocationSettings = lazy(() => import("./CourseLocationSettings"));
@@ -194,14 +195,14 @@ function QueryScreen() {
     const mount = snapshot?.mount;
     return mount?.total ? Array.from({ length: Math.min(mount.total, 80) }, (_, index) => index < mount.completed ? "done" : index === mount.completed && mount.current ? snapshot?.enabled ? "active" : "failed" : "waiting") : [];
   }, [snapshot]);
-  if (view === "loading") return <main key="loading" className="cx-query-page"><section className="cx-query-login cx-query-loading"><div className="cx-query-mark" /><p><span className="cx-query-spinner" aria-hidden="true" />加载中，启动准备！</p></section></main>;
+  if (view === "loading") return <main key="loading" className="cx-query-page"><section className="cx-query-login cx-query-loading"><div className="cx-query-mark" /><p><QueryIcon name="loader" className="cx-query-spinner" />加载中，启动准备！</p></section></main>;
   if (view === "login") return <main key="login" className="cx-query-page"><section className="cx-query-login">
     <header><div className="cx-query-mark" /><div><small>CHAOXING HELPER</small><h1>学习补给站</h1></div></header>
     <form onSubmit={login} aria-busy={busy} noValidate>
       <label><span>学习通账号</span><input value={account} onChange={(event) => setAccount(event.target.value)} autoComplete="username" maxLength={100} required /></label>
       <label><span>密码</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" maxLength={128} required /></label>
-      <button type="button" className={`cx-query-login-verify ${challenge ? "verified" : ""}`} disabled={busy || Boolean(challenge)} onClick={() => void verifyLogin()}>{pendingAction === "verify" && <span className="cx-query-spinner" aria-hidden="true" />}{challenge ? "✓ 已验证" : pendingAction === "verify" ? "验证中…" : "点击验证"}</button>
-      <button type="submit" disabled={busy || !challenge}>{pendingAction === "login" && <span className="cx-query-spinner" aria-hidden="true" />}{pendingAction === "login" ? "登录中…" : "登录，开始今日任务"}</button>
+      <button type="button" className={`cx-query-login-verify ${challenge ? "verified" : ""}`} disabled={busy || Boolean(challenge)} onClick={() => void verifyLogin()}>{challenge ? <QueryIcon name="check" /> : pendingAction === "verify" && <QueryIcon name="loader" className="cx-query-spinner" />}{challenge ? "已验证" : pendingAction === "verify" ? "验证中…" : "点击验证"}</button>
+      <button type="submit" disabled={busy || !challenge}>{pendingAction === "login" && <QueryIcon name="loader" className="cx-query-spinner" />}{pendingAction === "login" ? "登录中…" : "登录，开始今日任务"}</button>
     </form>
   </section></main>;
   if (!snapshot) return null;
@@ -218,9 +219,9 @@ function QueryScreen() {
   return <main key="dashboard" className="cx-query-page"><div className="cx-query-shell">
     <header className="cx-query-top"><div><span className="cx-query-mark" /><div><small>STUDY QUEST</small><h1>今日任务看板</h1></div></div>
       <div className="cx-query-actions"><span>{refreshedAt ? `刷新于 ${time(refreshedAt)}` : ""}</span>
-        <button type="button" className="repair" onClick={() => void repair()} disabled={busy || !mount}>{pendingAction === "repair" && <span className="cx-query-spinner" aria-hidden="true" />}{pendingAction === "repair" ? "处理中…" : "自助修复"}</button>
-        <button type="button" onClick={() => void refresh()} disabled={busy}>{pendingAction === "status" && <span className="cx-query-spinner" aria-hidden="true" />}{pendingAction === "status" ? "刷新中…" : "刷新"}</button>
-        <button type="button" className="quiet" onClick={() => void logout()} disabled={busy}>{pendingAction === "logout" && <span className="cx-query-spinner" aria-hidden="true" />}退出登录</button>
+        <button type="button" className="repair" onClick={() => void repair()} disabled={busy || !mount}>{pendingAction === "repair" && <QueryIcon name="loader" className="cx-query-spinner" />}{pendingAction === "repair" ? "处理中…" : "自助修复"}</button>
+        <button type="button" onClick={() => void refresh()} disabled={busy}>{pendingAction === "status" && <QueryIcon name="loader" className="cx-query-spinner" />}{pendingAction === "status" ? "刷新中…" : "刷新"}</button>
+        <button type="button" className="quiet" onClick={() => void logout()} disabled={busy}>{pendingAction === "logout" && <QueryIcon name="loader" className="cx-query-spinner" />}退出登录</button>
       </div></header>
     <section className="cx-query-card cx-query-course-controls">
       <h2><span className="cx-query-mark" />课程任务</h2>
@@ -236,13 +237,13 @@ function QueryScreen() {
           const replace = Boolean(mount && !sameCourse);
           if (replace && !await confirm({ title: "切换课程", message: `将停止“${mount!.courseName}”的挂载并切换到“${selectedCourse.name}”，是否继续？`, confirmLabel: "切换并挂载" })) return;
           void control({ action: "mount", courseId: selectedCourse.courseId, classId: selectedCourse.classId, replace });
-        }}>{pendingAction === "mount" && <span className="cx-query-spinner" aria-hidden="true" />}{sameCourse ? snapshot.enabled ? "已挂载当前课程" : "继续当前课程" : "挂载所选课程"}</button>
-        <button type="button" className="quiet" disabled={busy || !selectedCourse || sameCourse || alreadyQueued || queued.length >= 10} onClick={() => selectedCourse && void control({ action: "enqueue", courseId: selectedCourse.courseId, classId: selectedCourse.classId })}>{pendingAction === "enqueue" && <span className="cx-query-spinner" aria-hidden="true" />}{alreadyQueued ? "已在课程队列" : "加入课程队列"}</button>
-        <button type="button" className="quiet" disabled={busy} onClick={() => void control({ action: "refresh" })}>{pendingAction === "refresh" && <span className="cx-query-spinner" aria-hidden="true" />}刷新课程列表</button>
-        <button type="button" className="quiet" disabled={busy} onClick={() => void control({ action: snapshot.enabled ? "pause" : "resume" })}>{(pendingAction === "pause" || pendingAction === "resume") && <span className="cx-query-spinner" aria-hidden="true" />}{snapshot.enabled ? "暂停监听与挂载" : "继续监听与挂载"}</button>
+        }}>{pendingAction === "mount" && <QueryIcon name="loader" className="cx-query-spinner" />}{sameCourse ? snapshot.enabled ? "已挂载当前课程" : "继续当前课程" : "挂载所选课程"}</button>
+        <button type="button" className="quiet" disabled={busy || !selectedCourse || sameCourse || alreadyQueued || queued.length >= 10} onClick={() => selectedCourse && void control({ action: "enqueue", courseId: selectedCourse.courseId, classId: selectedCourse.classId })}>{pendingAction === "enqueue" && <QueryIcon name="loader" className="cx-query-spinner" />}{alreadyQueued ? "已在课程队列" : "加入课程队列"}</button>
+        <button type="button" className="quiet" disabled={busy} onClick={() => void control({ action: "refresh" })}>{pendingAction === "refresh" && <QueryIcon name="loader" className="cx-query-spinner" />}刷新课程列表</button>
+        <button type="button" className="quiet" disabled={busy} onClick={() => void control({ action: snapshot.enabled ? "pause" : "resume" })}>{(pendingAction === "pause" || pendingAction === "resume") && <QueryIcon name="loader" className="cx-query-spinner" />}{snapshot.enabled ? "暂停监听与挂载" : "继续监听与挂载"}</button>
         {(mount || queued.length > 0) && <button type="button" className="quiet" disabled={busy} onClick={async () => {
           if (await confirm({ title: "取消视频挂载", message: "要取消当前及所有排队课程的视频挂载吗？", confirmLabel: "确认取消挂载", destructive: true })) void control({ action: "cancel" });
-        }}>{pendingAction === "cancel" && <span className="cx-query-spinner" aria-hidden="true" />}取消视频挂载</button>}
+        }}>{pendingAction === "cancel" && <QueryIcon name="loader" className="cx-query-spinner" />}取消视频挂载</button>}
       </div>
       {queued.length > 0 && <ol className="cx-query-course-queue" aria-label="排队课程">{queued.map(course => <li key={`${course.courseId}:${course.classId}`}><span>{course.name}</span><button type="button" disabled={busy} onClick={() => void control({ action: "dequeue", courseId: course.courseId, classId: course.classId })} aria-label={`移除排队课程 ${course.name}`}>移除</button></li>)}</ol>}
       <p className="cx-query-status">{snapshot.lastStatus || "后台已就绪"}</p>
@@ -259,7 +260,7 @@ function QueryScreen() {
     <section className="cx-query-card cx-query-current"><h2><span className="cx-query-mark" />挂载明细</h2>
       {mount?.current ? <><div className="cx-query-current-row"><span>当前播放</span><strong key={`${mount.courseId}:${mount.current.name}`}>{mount.current.name}</strong></div><div className="cx-query-time"><span>播放进度</span><b>{clock(mount.current.playingTime)} / {clock(mount.current.duration)}</b></div><div className="cx-query-progress" role="progressbar" aria-label="当前视频播放进度" aria-valuenow={Math.floor(currentProgress)} aria-valuemin={0} aria-valuemax={100}><i key={`${mount.courseId}:${mount.classId}:${mount.current.name}`} style={{ transform: `scaleX(${currentProgress / 100})` }} /></div></> : <p className="cx-query-empty">{mount?.status || "暂无播放任务"}</p>}
       {mount && <p className="cx-query-status">{mount.status}</p>}
-      {mount && <button type="button" className="cx-query-repair-mobile" onClick={() => void repair()} disabled={busy}>{pendingAction === "repair" && <span className="cx-query-spinner" aria-hidden="true" />}{pendingAction === "repair" ? "处理中…" : "自助修复"}</button>}
+      {mount && <button type="button" className="cx-query-repair-mobile" onClick={() => void repair()} disabled={busy}>{pendingAction === "repair" && <QueryIcon name="loader" className="cx-query-spinner" />}{pendingAction === "repair" ? "处理中…" : "自助修复"}</button>}
     </section>
     <Suspense fallback={<section className="cx-query-card"><p className="cx-query-empty">地图加载中…</p></section>}>
       <CourseLocationSettings courses={snapshot.courses || []} onUnauthorized={expireSession} />

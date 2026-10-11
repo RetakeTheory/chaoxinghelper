@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { queryFailure, redactQueryLog, type QueryFailureContext, type QueryToastKind } from "../../lib/query-feedback";
+import { QueryIcon } from "./QueryIcon";
 
 type Toast = { id: number; kind: QueryToastKind; message: string; leaving: boolean };
 type Confirmation = { title: string; message: string; confirmLabel?: string; destructive?: boolean };
@@ -39,9 +40,9 @@ function ToastItem({ toast, dismiss, remove }: { toast: Toast; dismiss: (id: num
   return <div className={`cx-query-toast-slot${toast.leaving ? " leaving" : ""}`} aria-hidden={toast.leaving || undefined}>
     <div className="cx-query-toast-clip"><div className={`cx-query-toast ${toast.kind}${toast.leaving ? " leaving" : ""}`}
       role={toast.kind === "error" ? "alert" : "status"}>
-    <span className="cx-query-toast-symbol" aria-hidden="true">{({ info: "i", done: "✓", warning: "!", error: "!", cancellation: "×" })[toast.kind]}</span>
+    <span className="cx-query-toast-symbol" aria-hidden="true"><QueryIcon name={toast.kind} /></span>
     <span>{toast.message}</span>
-    <button type="button" disabled={toast.leaving} onClick={() => dismiss(toast.id)} aria-label="关闭提示">×</button>
+    <button type="button" disabled={toast.leaving} onClick={() => dismiss(toast.id)} aria-label="关闭提示"><QueryIcon name="close" /></button>
   </div></div></div>;
 }
 
@@ -91,7 +92,7 @@ function FeedbackDialog({ state, close, exited, notify }: { state: DialogState; 
   return <div className={`cx-query-dialog-backdrop${leaving ? " leaving" : ""}`}><div ref={panelRef} className={`cx-query-dialog ${dialog.kind === "error" ? "error" : dialog.destructive ? "cancellation" : "warning"}${leaving ? " leaving" : ""}`}
     role={dialog.kind === "error" ? "alertdialog" : "dialog"} aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId}>
     <header><h2 id={titleId}>{dialog.title}</h2>
-      {dialog.kind === "error" && <button className="cx-query-copy-log" type="button" disabled={leaving} onClick={() => void copy()} aria-label="复制错误日志">{copied ? "✓ 已复制" : "复制日志"}</button>}
+      {dialog.kind === "error" && <button className="cx-query-copy-log" type="button" disabled={leaving} onClick={() => void copy()} aria-label="复制错误日志"><QueryIcon name={copied ? "check" : "copy"} />{copied ? "已复制" : "复制日志"}</button>}
     </header>
     <p id={descriptionId} className="cx-query-dialog-message">{dialog.message}</p>
     {dialog.kind === "error" && <>

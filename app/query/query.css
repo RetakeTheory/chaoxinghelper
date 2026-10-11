@@ -56,9 +56,11 @@
 .cx-query-toast.done{--feedback-bg:#eaf7ed;--feedback-border:#cde8d2;--feedback-ink:#357747}
 .cx-query-toast.warning{--feedback-bg:#fff7dc;--feedback-border:#eddfac;--feedback-ink:#936e25}
 .cx-query-toast.error,.cx-query-toast.cancellation{--feedback-bg:#fff0f0;--feedback-border:#f0cdcd;--feedback-ink:#a55558}
-.cx-query-toast-symbol{display:grid;place-items:center;flex:none;width:21px;height:21px;border:1px solid currentColor;border-radius:5px;font-size:12px;font-weight:800}
+.cx-query-icon{display:inline-block;flex:none;width:18px;height:18px;vertical-align:middle}
+.cx-query-toast-symbol{display:grid;place-items:center;flex:none;width:21px;height:21px}
+.cx-query-toast-symbol .cx-query-icon{width:21px;height:21px}
 .cx-query-toast>span:nth-child(2){flex:1;min-width:0;overflow-wrap:anywhere}
-.cx-query-toast>button{flex:none;width:28px;height:28px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:20px;cursor:pointer}
+.cx-query-toast>button{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}
 .cx-query-toast>button:hover{background:#ffffff85}
 .cx-query-dialog-backdrop{position:fixed;z-index:1100;inset:0;display:grid;place-items:center;padding:20px;background:#27364a56;backdrop-filter:blur(4px);overflow-y:auto}
 .cx-query-dialog{width:min(530px,100%);max-height:calc(100dvh - 40px);overflow-y:auto;padding:24px;border:1px solid #e3e8f0;border-radius:16px;background:#fff;color:#303949;box-shadow:0 22px 75px #19264133;animation:cx-dialog-enter .18s ease-out}
@@ -100,7 +102,7 @@
 .cx-query-total i,.cx-query-progress i{width:100%;transform-origin:left center;transition:transform .65s cubic-bezier(.22,1,.36,1)}
 .cx-query-current-row strong{animation:cx-text-enter .22s ease-out both}
 .cx-query-time b,.cx-query-total b,.cx-query-stats b{font-variant-numeric:tabular-nums}
-.cx-query-spinner{display:inline-block;flex:none;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:cx-spin .75s linear infinite}
+.cx-query-spinner{width:14px;height:14px;animation:cx-spin .75s linear infinite;transform-origin:center}
 .cx-query-loading>p{display:flex;align-items:center;gap:9px;margin-top:20px}
 .cx-query-toasts{gap:0}
 .cx-query-toast-slot{display:grid;grid-template-rows:1fr;margin-bottom:9px;transition:grid-template-rows .18s ease,margin-bottom .18s ease}
